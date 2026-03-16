@@ -91,7 +91,6 @@ const readmore = more.repeat(550);
 const timeWib = moment.tz('Asia/Jakarta').format('DD/MM HH:mm:ss')
 const timeWita = moment().tz('Asia/Makassar').format('DD/MM HH:mm:ss')
 const timeWit = moment().tz('Asia/Jayapura').format('DD/MM HH:mm:ss')
-const introthumb = fs.readFileSync('./lib/introthumb.mp4')
 
 //DATABASE INISIALIZATION
 let isNumber = x => typeof x === 'number' && !isNaN(x);
