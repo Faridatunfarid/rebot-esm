@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "pm2 start index.js --name myapp --cron-restart=\"*/30 * * * *\" --merge-logs && pm2 logs"
+    "start": "node ."
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
