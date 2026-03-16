@@ -1,19 +1,33 @@
- import "./config.js";
- import { jidNormalizedUser } from "@whiskeysocket/baileys"
- import util from "util";
- import fs from "fs"
+import "./config.js";
+ import { jidNormalizedUser, generateWAMessageContent, generateWAMessage, generateWAMessageFromContent, prepareWAMessageMedia, getContentType } from "@whiskeysocket/baileys"
+ import util, { promisify } from "util";
+ import fs from "fs";
+ import qs from "qs";
+ import axios from 'axios';
+ import * as cheerio from "cheerio";
+ import FormData from 'form-data';
  import { fileURLToPath } from 'url';
  import path, { dirname } from "path"
+ import ffmpeg from "fluent-ffmpeg";
  import chalk from "chalk"
+ import os from "os"
+ import crypto from "crypto";
  import { exec, spawn, execSync } from "child_process"
+ import { fileTypeFromBuffer } from 'file-type';
+ import { runtime, smsg, getBuffer, fetchJson, isUrl, getRandom, jsonformat, getGroupAdmins, formatp} from "./lib/myfunc.js"
  import ms from 'parse-ms'
  import toMs from "ms";
+ import moment from 'moment-timezone'
+ import yts  from "yt-search"
+ import { uploadFile, btch } from './lib/uploader.js'
  import { checkUserMessageLimit } from "./lib/antispam.js"
 
 
  //Variabel declared
+ let cmhit = []
  let multi = true
  let nopref = false
+ let enhance = {};
 
  export default async function rebotHandler(rebot, m, chatUpdate, store) { 
   try {
@@ -36,8 +50,13 @@ const args = isCmd ? body.trim().split(/ +/).slice(1) : [];
   // variabel user and subject
 const text = args.join(" ")
 const q = args.join(" ")
-const pushname = m.pushName || "No Name"
+const pushname = m.pushName || "GK ada namanya"
 const botNumber = await rebot.decodeJid(rebot.user.id)
+const fatkuns = (m.quoted || m)
+const quoted = (fatkuns.mtype == 'buttonsMessage') ? fatkuns[Object.keys(fatkuns)[1]] : (fatkuns.mtype == 'templateMessage') ? fatkuns.hydratedTemplate[Object.keys(fatkuns.hydratedTemplate)[1]] : (fatkuns.mtype == 'product') ? fatkuns[Object.keys(fatkuns)[0]] : m.quoted ? m.quoted : m
+const mime = (quoted.msg || quoted).mimetype || ''
+const qmsg = (quoted.msg || quoted)
+const isMedia = /image|video|sticker|audio/.test(mime)
 const creatorIds = [botNumber, ...global.owner]
 .map(v => {
   const num = v.replace(/[^0-9]/g, '');
@@ -55,98 +74,134 @@ const isBan = (global.db.data.users[m.sender] && global.db.data.users[m.sender].
 const isBanspam = (global.db.data.users[m.sender] && global.db.data.users[m.sender].banspam && global.db.data.users[m.sender].banspam.status === true);
 
 
+
   // variabel Group
-const groupMetadata = m.isGroup ? await rebot.groupMetadata(m.chat).catch(e => {}) : ''
+const groupMetadata = m.isGroup ? await store.groupMetadata(m.chat, rebot).catch(e => {}) : ''
 const groupName = m.isGroup ? groupMetadata.subject : ''
+const participants = m.isGroup ? await groupMetadata.participants : ''
+const groupAdmins = m.isGroup ? await getGroupAdmins(participants) : ''
+const isAdmins = m.isGroup ? groupAdmins.includes(m.sender) : false
+const isBotAdmins = m.isGroup ? groupAdmins.includes(botNumber) : false
 
 //Another variabel 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const more = String.fromCharCode(8206);
+const readmore = more.repeat(550);
+const timeWib = moment.tz('Asia/Jakarta').format('DD/MM HH:mm:ss')
+const timeWita = moment().tz('Asia/Makassar').format('DD/MM HH:mm:ss')
+const timeWit = moment().tz('Asia/Jayapura').format('DD/MM HH:mm:ss')
+const introthumb = fs.readFileSync('./lib/introthumb.mp4')
 
 //DATABASE INISIALIZATION
-try {
-  let limitUser = isPremium ? global.limitawal.premium : global.limitawal.free
-  let isNumber = x => typeof x === 'number' && !isNaN(x)
+let isNumber = x => typeof x === 'number' && !isNaN(x);
 
-// tentukan jid & lid
-  let jid, lid
-  if (m.sender.endsWith('@s.whatsapp.net')) {
-   jid = m.sender
-   lid = await getLidFromJid(m.sender)
- } else if (m.sender.endsWith('@lid')) {
-  jid = m.key.participantAlt
-  lid = m.sender
+// Determine limit based on premium statusq
+let limitUser = isPremium ? global.limitawal.premium : global.limitawal.free;
+// Determine JID & LID
+let jid, lid;
+if (m.key.remoteJid.endsWith('@s.whatsapp.net')) {
+  jid = m.key.remoteJid;
+  lid = m.key.remoteJidAlt;
+} else if (m.key.remoteJid.endsWith('@g.us')) {
+  jid = m.key.participantAlt;
+  lid = m.key.participant;
 }
 
-let keyUser = jid || m.sender
-let user = global.db.data.users[keyUser]
+let keyUser = jid || m.sender;
 
-if (typeof user !== 'object') global.db.data.users[keyUser] = {}
-  user = global.db.data.users[keyUser]
+// === CRITICAL FIX: Initialize user object properly ===
 
-if (user) {
- if (!isNumber(user.afkTime)) user.afkTime = -1
-   if (!('afkReason' in user)) user.afkReason = ''
-     if (!isNumber(user.limit)) user.limit = limitUser
-      if (!('banned' in user)) user.banned = false
-        if (!('moderator' in user)) {
-          user.moderator = { status: false, expired: 0 }
+// Ensure users object exists
+if (!global.db.data.users) {
+  global.db.data.users = {};
+}
+
+// Check if user exists, if not create with defaults
+if (!global.db.data.users[keyUser]) {
+  console.log(`Creating new user: ${keyUser}`);
+  
+  global.db.data.users[keyUser] = {
+    afkTime: -1,
+    afkReason: '',
+    limit: limitUser,
+    moderator: { status: false, expired: 0 },
+    premium: { status: false, expired: 0 },
+    banspam: { status: false, expired: 0 },
+    banned: false,
+    jid: jid,
+    lid: lid
+  };
+}
+
+// NOW get user reference (guaranteed to exist)
+let user = global.db.data.users[keyUser];
+
+// Validate and fill missing properties (for existing users)
+if (!isNumber(user.afkTime)) user.afkTime = -1;
+if (!('afkReason' in user)) user.afkReason = '';
+if (!isNumber(user.limit)) user.limit = limitUser;
+if (!('banned' in user)) user.banned = false;
+
+// Ensure objects exist with proper structure
+if (!user.moderator || typeof user.moderator !== 'object') {
+  user.moderator = { status: false, expired: 0 };
+}
+if (!user.premium || typeof user.premium !== 'object') {
+  user.premium = { status: false, expired: 0 };
+}
+if (!user.banspam || typeof user.banspam !== 'object') {
+  user.banspam = { status: false, expired: 0 };
+}
+
+// Update identities (in case they changed)
+user.jid = jid;
+user.lid = lid;
+
+// // === VERIFICATION (Optional but recommended) ===
+// console.log(`User loaded: ${keyUser}`, {
+//   limit: user.limit,
+//   premium: user.premium?.status || false,
+//   banned: user.banned
+// });
+
+
+let chats = global.db.data.chats[m.chat]
+if (typeof chats !== 'object') global.db.data.chats[m.chat] = {}
+  if (chats) {
+    if (!('mute' in chats)) chats.mute = false
+      if (!('antilink' in chats)) chats.antilink = false
+        if (!('mentionsTag' in chats)) chats.mentionsTag = { antiMention: false, autoKick: false }
+          if (!('antiurl' in chats)) chats.antiurl = { antiurls: false, autoKickurl: false, setMessageUrl: true }
+        } else global.db.data.chats[m.chat] = {
+          mute: false,
+          antilink: false,
+          mentionsTag: { antiMention: false, autoKick: false },
+          antiurl: { antiurls: false, autoKickurl: false, setMessageUrl: true },
         }
-        if (!('premium' in user)) {
-          user.premium = { status: false, expired: 0 }
-        }
-   // simpan identitas
-        user.jid = jid
-        user.lid = lid
-      } else {
-       global.db.data.users[keyUser] = {
-        afkTime: -1,
-        afkReason: '',
-        limit: limitUser,
-        moderator: { status: false, expired: 0 },
-        premium: { status: false, expired: 0 },
-        banspam: { status: false, expired: 0 },
-        banned: false,
-        jid,
-        lid
-      }
-    }
 
-
-    let chats = global.db.data.chats[m.chat]
-    if (typeof chats !== 'object') global.db.data.chats[m.chat] = {}
-      if (chats) {
-        if (!('mute' in chats)) chats.mute = false
-          if (!('antilink' in chats)) chats.antilink = false
-            if (!('mentionsTag' in chats)) chats.mentionsTag = { antiMention: false, autoKick: false }
-              if (!('antiurl' in chats)) chats.antiurl = { antiurls: false, autoKickurl: false, setMessageUrl: true }
-            } else global.db.data.chats[m.chat] = {
-              mute: false,
-              antilink: false,
-              mentionsTag: { antiMention: false, autoKick: false },
-              antiurl: { antiurls: false, autoKickurl: false, setMessageUrl: true },
-            }
-
-            let setting = global.db.data.settings[botNumber]
-            const now = new Date();
-            if (typeof setting !== 'object') global.db.data.settings[botNumber] = {}
-              if (setting) {
-                if (!isNumber(setting.status)) setting.status = 0
-                  if (!isNumber(setting.hit)) setting.hit = 0
-                    if (!isNumber(setting.resetlimit)) setting.resetlimit = { dateYesterday:  new Date().getDate(), boolLimit: false }
-                      if (!('earthquakeData' in setting)) setting.earthquakeData = null
-                        if (!('autobio' in setting)) setting.autobio = true
-                          if (!('templateImage' in setting)) setting.templateImage = false
-                            if (!('templateVideo' in setting)) setting.templateVideo = false
-                              if (!('templateGif' in setting)) setting.templateGif = false
-                                if (!('templateLoc' in setting)) setting.templateLoc = true
-                                  if (!('templateMsg' in setting)) setting.templateMsg = false    
-                                } else global.db.data.settings[botNumber] = {
-                                  status: 0,
-                                  hit: 0,
+        let setting = global.db.data.settings[botNumber]
+        const now = new Date();
+        if (typeof setting !== 'object') global.db.data.settings[botNumber] = {}
+          if (setting) {
+            if (!isNumber(setting.status)) setting.status = 0
+              if (!isNumber(setting.hit)) setting.hit = 0
+                if (!isNumber(setting.resetlimit)) setting.resetlimit = { dateYesterday:  new Date().getDate(), boolLimit: false }
+                  if (!('earthquakeData' in setting)) setting.earthquakeData = null
+                    if (!('autobio' in setting)) setting.autobio = true
+                      if (!('changelog' in setting)) setting.changelog = []
+                        if (!('templateImage' in setting)) setting.templateImage = false
+                          if (!('templateVideo' in setting)) setting.templateVideo = false
+                            if (!('templateGif' in setting)) setting.templateGif = false
+                              if (!('templateLoc' in setting)) setting.templateLoc = true
+                                if (!('templateMsg' in setting)) setting.templateMsg = false    
+                              } else global.db.data.settings[botNumber] = {
+                                status: 0,
+                                hit: 0,
 resetlimit: { dateYesterday:  new Date().getDate(), boolLimit: false }, // Fixed this line
 earthquakeData: null,
 autobio: true,
+changelog: [],
 templateImage: false,
 templateVideo: false,
 templateGif: false,
@@ -154,14 +209,14 @@ templateLoc: true,
 templateMsg: false,
 }
 
-} catch (err) {
-  console.error(err)
-}
 
 if (m.message) {
   console.log(chalk.black(chalk.bgGreen('[ TIME ]')), chalk.black(chalk.bgGreen(new Date)) + '\n' + chalk.white('[ PESAN ]'), chalk.black(chalk.bgBlue(budy || m.mtype)) + '\n' + chalk.magenta('=> Dari'), chalk.green(pushname), chalk.yellow(m.sender) + '\n' + chalk.blueBright('=> Di'), chalk.green(m.isGroup ? groupName : 'Private Chat', m.chat))
   // console.log(m)
 }
+
+cmhit.push(command)
+global.db.data.settings[botNumber].hit += 1
 
 if (isBan) {
   return m.reply('> _ⓘ Maaf kamu sudah terbanned permanen di bot ini_')
@@ -224,20 +279,20 @@ expiredModeratorCheck(rebot, global.db)
 
 /////////////////////////Funcion antispam/////////////////////////////// 
 
-function extractCommands(filePath) {
-  const content = fs.readFileSync(filePath, 'utf8');
-  const regex = /case\s+'([^']+)'(?=:)/g;
-  let match;
-  const cmdTect = [];
+// function extractCommands(filePath) {
+//   const content = fs.readFileSync(filePath, 'utf8');
+//   const regex = /case\s+'([^']+)'(?=:)/g;
+//   let match;
+//   const cmdTect = [];
 
-  while ((match = regex.exec(content)) !== null) {
-    cmdTect.push(match[1]);
-  }
+//   while ((match = regex.exec(content)) !== null) {
+//     cmdTect.push(match[1]);
+//   }
 
-  return cmdTect;
-}
+//   return cmdTect;
+// }
 
-const cmdTecth = extractCommands(path.join(__dirname, 'rebot.js'));
+// const cmdTecth = extractCommands(path.join(__dirname, 'rebot.js'));
 
 
 if (!isCreator && isCmd && checkUserMessageLimit(m.sender)) {
@@ -283,7 +338,6 @@ const expiredBanSpam = (rebot, db) => {
 
 expiredBanSpam(rebot, global.db)
 /////////////////////////end function///////////////////////////////
-
 
 
 switch (command) {
@@ -562,11 +616,9 @@ break;
 
 
 default:
-
-
-  if (budy.startsWith(">")) {
+ if (budy.startsWith(">")) {
     try {
-      if (!isCreator) return m.reply('lu bukan owner')
+      if (!isCreator) return
         let evaled = await eval(budy.slice(1));
       if (typeof evaled !== "string") {
         evaled = util.inspect(evaled);
@@ -585,6 +637,14 @@ default:
         })
   }
 
+  if (/^(bot|rebot)/i.test(budy)) {
+    if (isBan) return m.reply('> _ⓘ Maaf kamu sudah terbanned permanen di bot ini_')
+      if (isBanspam) return m.reply(mess.spam)
+        if (m.key.fromMe) return
+
+          m.reply(`Hai aku Rebot, ada yang bisa aku bantu? Silahkan Ketik ${prefix}menu`)
+      }
+  
 }
 } catch (err) {
   await rebot.sendMessage(m.chat, { text: util.format(err) }, { quoted: m });
