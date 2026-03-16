@@ -13,7 +13,6 @@ import fs from "fs";
 import { Boom } from "@hapi/boom"
 // import NodeCache from 'node-cache';
 import { NodeCache } from '@cacheable/node-cache';
-import JSONCache from './lib/jsonCache.js';
 import { smsg, getBuffer, getSizeMedia} from "./lib/myfunc.js";
 import { imageToWebp, videoToWebp, writeExifImg, writeExifVid, writeExif } from "./lib/exif.js"
 import rebotHandler from "./rebot.js";
