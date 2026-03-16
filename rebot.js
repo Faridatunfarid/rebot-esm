@@ -361,6 +361,321 @@ case 'self': {
 }
 break
 
+  ////////////////////////GROUP FITUR////////////////////////
+
+  case 'groupinfo':
+case 'infogrup': {
+  if (!m.isGroup) return m.reply(mess.group);
+  if (isBanspam) return m.reply(mess.spam);
+  
+  try {
+    // Ini akan pakai cache
+    const metadata = await store.groupMetadata(m.chat, rebot);
+    
+    if (!metadata) {
+      return m.reply('❌ Gagal mendapatkan info grup');
+    }
+    
+    const participants = metadata.participants || [];
+    const admins = participants.filter(p => p.admin).map(p => p.id);
+    
+    let txt = `📱 *GROUP INFO*\n\n`;
+    txt += `📌 *Name:* ${metadata.subject}\n`;
+    txt += `🆔 *ID:* ${metadata.id}\n`;
+    txt += `👥 *Members:* ${participants.length}\n`;
+    txt += `👑 *Admins:* ${admins.length}\n`;
+    txt += `📅 *Created:* ${new Date(metadata.creation * 1000).toLocaleDateString()}\n`;
+    txt += `🔒 *Settings:* ${metadata.announce ? 'Only Admins' : 'All Members'}\n`;
+    txt += `✏️ *Edit Info:* ${metadata.restrict ? 'Only Admins' : 'All Members'}\n`;
+    
+    if (metadata.desc) {
+      txt += `\n📝 *Description:*\n${metadata.desc}`;
+    }
+    
+    m.reply(txt);
+    
+  } catch (err) {
+    throw err
+  }
+}
+break;
+
+case 'cachestatus':
+case 'cacheinfo':
+case 'statuscache': {
+  if (!isCreator) return m.reply(mess.owner);
+  
+  try {
+    const cacheData = global.cacheHelpers.getStats();
+    
+    let txt = `📊 *GROUP METADATA CACHE STATUS*\n\n`;
+    txt += `╭─────────────────\n`;
+    txt += `│ 🔑 *Cached Groups:* ${cacheData.totalCached}\n`;
+    txt += `│ ✅ *Cache Hits:* ${cacheData.hits}\n`;
+    txt += `│ ❌ *Cache Misses:* ${cacheData.misses}\n`;
+    txt += `│ 📈 *Hit Rate:* ${cacheData.hitRate}%\n`;
+    txt += `╰─────────────────\n\n`;
+    
+    if (cacheData.totalCached > 0) {
+      txt += `📋 *Cached Groups (${Math.min(10, cacheData.totalCached)} shown):*\n\n`;
+      
+      const keys = cacheData.keys.slice(0, 10);
+      
+      for (let i = 0; i < keys.length; i++) {
+        const jid = keys[i];
+        const info = global.cacheHelpers.getCacheInfo(jid);
+        
+        const groupName = info?.data?.subject || info?.data?.name || 'Unknown Group';
+        const membersCount = info?.data?.participants?.length || 0;
+        const expiresIn = info?.expiresIn || 0;
+        const expiresMin = expiresIn > 0 ? Math.floor(expiresIn / 60) : 0;
+        
+        txt += `${i + 1}. *${groupName}*\n`;
+        txt += `   📱 ID: ${jid.split('@')[0]}\n`;
+        txt += `   ⏳ Expires: ${expiresMin}m (${expiresIn}s)\n`;
+        txt += `   👥 Members: ${membersCount}\n\n`;
+      }
+      
+      if (cacheData.totalCached > 10) {
+        txt += `_... and ${cacheData.totalCached - 10} more groups_\n\n`;
+      }
+    } else {
+      txt += `📭 *No groups cached yet*\n\n`;
+      txt += `💡 Groups will be cached automatically when accessed\n\n`;
+    }
+    
+    txt += `⚙️ *Cache TTL:* 1 hour per group`;
+    
+    await rebot.sendMessage(m.chat, { text: txt }, {quoted: m } );
+    
+  } catch (err) {
+    console.error('Cache status error:', err);
+    throw err;
+  }
+}
+break;
+
+// 2. Check Cache - Cek cache grup saat ini
+case 'checkcache':
+case 'cekcache':
+case 'cekgroupcache': {
+  if (!m.isGroup) return m.reply(mess.group);
+  if (!isAdmins && !isCreator) return m.reply(mess.admin)
+
+    try {
+      const info = global.cacheHelpers.getCacheInfo(m.chat);
+
+      let txt = `📦 *CACHE INFO FOR THIS GROUP*\n\n`;
+      txt += `╭─────────────────\n`;
+      txt += `│ 📌 *Group:* ${groupMetadata.subject || 'Unknown'}\n`;
+      txt += `│ 🆔 *ID:* ${m.chat.split('@')[0]}\n`;
+      txt += `│ 📊 *Status:* ${info.exists ? '✅ Cached' : '❌ Not Cached'}\n`;
+      txt += `╰─────────────────\n\n`;
+
+      if (info.exists) {
+        const expiresMinutes = Math.floor(info.expiresIn / 60);
+        const expiresSeconds = info.expiresIn % 60;
+
+        txt += `⏱️ *Cache Info:*\n`;
+        txt += `├ Expires in: ${expiresMinutes}m ${expiresSeconds}s\n`;
+        txt += `├ Members: ${info.data.participants.length}\n`;
+        txt += `├ Admins: ${info.data.participants.filter(p => p.admin).length}\n`;
+        txt += `├ Created: ${new Date(info.data.creation * 1000).toLocaleDateString()}\n`;
+        txt += `└ Last updated: Fresh\n\n`;
+        txt += `💡 Cache akan auto-refresh dalam ${expiresMinutes} menit`;
+      } else {
+        txt += `⚠️ *Not Cached Yet*\n\n`;
+        txt += `💡 Cache akan dibuat otomatis saat metadata diakses.\n`;
+        txt += `Gunakan *.refreshgroup* untuk cache sekarang.`;
+      }
+
+      await m.reply(txt);
+
+    } catch (err) {
+      throw err
+    }
+  }
+  break;
+
+// 3. Refresh Group Cache - Refresh cache grup saat ini
+case 'refreshgroupcache':
+case 'refreshgroup':
+case 'refreshcache': {
+  if (!m.isGroup) return m.reply(mess.group);
+  if (!isAdmins && !isCreator) return m.reply(mess.admin);
+  
+  try {
+    m.reply('🔄 Refreshing group cache...');
+    
+    // Invalidate current cache
+    global.cacheHelpers.invalidate(m.chat);
+    
+    // Fetch fresh data
+    const metadata = await store.groupMetadata(m.chat, rebot);
+    
+    if (!metadata) {
+      return m.reply('❌ Failed to fetch group metadata');
+    }
+    
+    const admins = metadata.participants.filter(p => p.admin).length;
+    
+    let txt = `✅ *GROUP CACHE REFRESHED!*\n\n`;
+    txt += `╭─────────────────\n`;
+    txt += `│ 📌 *Name:* ${metadata.subject}\n`;
+    txt += `│ 👥 *Members:* ${metadata.participants.length}\n`;
+    txt += `│ 👑 *Admins:* ${admins}\n`;
+    txt += `│ 🔒 *Settings:* ${metadata.announce ? 'Only Admins' : 'All Members'}\n`;
+    txt += `│ ✏️ *Edit Info:* ${metadata.restrict ? 'Admins Only' : 'All Members'}\n`;
+    txt += `╰─────────────────\n\n`;
+    txt += `⏱️ Cache akan expire dalam 1 jam`;
+    
+    m.reply(txt);
+    
+  } catch (err) {
+    throw err
+  }
+}
+break;
+
+// 4. Clear Cache - Hapus cache tertentu atau semua
+case 'clearcache':
+case 'cleargroupcache':
+case 'hapuscache': {
+  if (!isCreator) return m.reply(mess.owner);
+  
+  try {
+    const stats = global.cacheHelpers.getStats();
+    const beforeCount = stats.totalCached;
+    
+    if (beforeCount === 0) {
+      return m.reply('📭 No cache to clear!');
+    }
+    
+    // Clear all cache
+    global.cacheHelpers.clear();
+    
+    let txt = `✅ *CACHE CLEARED SUCCESSFULLY*\n\n`;
+    txt += `🗑️ Cleared: ${beforeCount} group caches\n`;
+    txt += `💾 Memory freed\n\n`;
+    txt += `💡 Cache akan dibuat ulang otomatis saat dibutuhkan`;
+    
+    m.reply(txt);
+    
+  } catch (err) {
+    throw err
+  }
+}
+break;
+
+// 5. Clear This Group Cache - Hapus cache grup saat ini saja
+case 'clearthiscache':
+case 'hapuscacheini': {
+  if (!m.isGroup) return m.reply(mess.group);
+  if (!isAdmins && !isCreator) return m.reply(mess.admin);
+  
+  try {
+    const info = global.cacheHelpers.getCacheInfo(m.chat);
+    
+    if (!info.exists) {
+      return m.reply('📭 This group is not cached yet!');
+    }
+    
+    // Invalidate this group's cache
+    global.cacheHelpers.invalidate(m.chat);
+    
+    let txt = `✅ *CACHE CLEARED*\n\n`;
+    txt += `📌 Group: ${info.data.subject}\n`;
+    txt += `🗑️ Cache untuk grup ini telah dihapus\n\n`;
+    txt += `💡 Cache akan dibuat ulang saat metadata diakses lagi`;
+    
+    m.reply(txt);
+    
+  } catch (err) {
+    throw err
+  }
+}
+break;
+
+// 6. List Cached Groups - List semua grup yang di-cache
+case 'listcache':
+case 'listcachedgroups':
+case 'cachedgroups': {
+  if (!isCreator) return m.reply(mess.owner);
+  
+  try {
+    const cachedGroups = global.cacheHelpers.getCachedGroups();
+    
+    if (cachedGroups.length === 0) {
+      return m.reply('📭 *No groups cached yet*\n\nGroups akan di-cache otomatis saat metadata diakses.');
+    }
+    
+    let txt = `📋 *CACHED GROUPS LIST*\n\n`;
+    txt += `Total: ${cachedGroups.length} groups\n`;
+    txt += `════════════════════\n\n`;
+    
+    const maxShow = 20;
+    for (let i = 0; i < Math.min(maxShow, cachedGroups.length); i++) {
+      const jid = cachedGroups[i];
+      const info = global.cacheHelpers.getCacheInfo(jid);
+      
+      const expiresMin = Math.floor(info.expiresIn / 60);
+      
+      txt += `*${i + 1}. ${info.data?.subject || 'Unknown Group'}*\n`;
+      txt += `   📱 ${jid.split('@')[0]}\n`;
+      txt += `   👥 ${info.data?.participants?.length || 0} members\n`;
+      txt += `   ⏳ ${expiresMin}m remaining\n`;
+      txt += `   ────────────────\n`;
+    }
+    
+    if (cachedGroups.length > maxShow) {
+      txt += `\n_... and ${cachedGroups.length - maxShow} more groups_\n`;
+      txt += `\nUse *.cachestatus* for full statistics`;
+    }
+    
+    await m.reply(txt);
+    
+  } catch (err) {
+    throw err
+  }
+}
+break;
+
+// 7. Preload Cache - Preload semua grup
+case 'preloadcache':
+case 'loadcache':
+case 'warmcache': {
+  if (!isCreator) return m.reply(mess.owner);
+  
+  try {
+    m.reply('🔄 *Starting cache preload...*\n\nThis may take a while depending on number of groups.');
+    
+    const startTime = Date.now();
+    const result = await global.cacheHelpers.preload(rebot);
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    
+    if (result.success) {
+      let txt = `✅ *CACHE PRELOAD COMPLETE*\n\n`;
+      txt += `╭─────────────────\n`;
+      txt += `│ 📦 *Loaded:* ${result.count} groups\n`;
+      txt += `│ ⏱️ *Duration:* ${duration}s\n`;
+      txt += `│ 💾 *Status:* All cached\n`;
+      txt += `╰─────────────────\n\n`;
+      txt += `🚀 All group metadata is now cached and ready!\n`;
+      txt += `⏱️ Cache will expire in 1 hour`;
+      
+      await m.reply(txt);
+    } else {
+      m.reply(`❌ *Preload failed*\n\nError: ${result.error}\n\nSome groups may still be cached.`);
+    }
+    
+  } catch (err) {
+    throw err
+  }
+}
+break;
+
+   ////////////////////////END GROUP FITUR////////////////////////
+
 case 'metadata' : {
   if (!isModerator) return m.reply(mess.mod)
     if (isBanspam) return m.reply(mess.spam)
@@ -408,7 +723,7 @@ case 'moderator': {
   } else if (action === 'del') {
     global.db.data.users[target].moderator = { status: false, expired: 0 };
     global.db.data.users[target].limit = global.limitawal.free;
-    m.reply(`Berhasil menghapus premium dari ${target}`);
+    m.reply(`Berhasil menghapus moderator dari ${target}`);
   }
 }
 break;
@@ -418,8 +733,8 @@ case 'checkmoderator':
 case 'moderatorcek':
 case 'cekmoderator': {
   if (isBanspam) return m.reply(mess.spam)
-    let dbprem = global.db.data.users[m.sender]
-  if (!global.db.data.users[m.sender].moderator.status) return m.reply(`> _Kamu tidak terdaftar sebagai moderator. Ketik ${prefix}toko untuk membeli hak moderator`)
+    let dbprem = user
+  if (!user.moderator.status) return m.reply(`> _Kamu tidak terdaftar sebagai moderator. Ketik ${prefix}toko untuk membeli hak moderator_`)
     let cekvip = ms(dbprem.moderator.expired - Date.now())
   let premiumnya = `*「  MODERATOR EXPIRED 」*\n\n➸ *ID*: ${m.sender}\n➸ *Expired :* ${cekvip.days} day(s) ${cekvip.hours} hour(s) ${cekvip.minutes} minute(s)`
   m.reply(premiumnya)
@@ -500,13 +815,13 @@ case 'transferlimit': case 'tflimit': {
       if (!jumlah || isNaN(jumlah) || jumlah <= 0) return m.reply('> _ⓘ Masukkan nominal limit yang valid!_\n> _Example:.transferlimit 5 62..._');
       if (!target) return m.reply('> _ⓘ Masukkan nomor target dengan format 62...!_\n> _Example:.transferlimit 5 62..._');
       if (!global.db.data.users[target]) return m.reply('> _ⓘ Pengguna tidak ditemukan dalam database!_');
-      if (!global.db.data.users[m.sender]) return m.reply('> _ⓘ Data kamu tidak ditemukan dalam database!_');
+      if (!user) return m.reply('> _ⓘ Data kamu tidak ditemukan dalam database!_');
 
-      let senderLimit = global.db.data.users[m.sender].limit;
+      let senderLimit = user.limit;
       if (senderLimit < jumlah) return m.reply('> _ⓘ Limit kamu tidak mencukupi untuk transfer ini!_');
 
 // Kurangi limit pengirim dan tambahkan ke penerima
-      global.db.data.users[m.sender].limit -= jumlah;
+      user.limit -= jumlah;
       global.db.data.users[target].limit += jumlah;
 
       rebot.sendTextWithMentions(m.chat,`✅ Berhasil mentransfer *${jumlah}* limit ke *@${target.split('@')[0]}*!`,m);
@@ -522,7 +837,7 @@ case 'transferlimit': case 'tflimit': {
   break;
 
 case 'ban': {
-  if (!isModerator) return m.reply("Hanya owner/creator yang dapat menggunakan perintah ini.");
+  if (!isModerator) return m.reply(mess.mod);
   if (isBanspam) return m.reply(mess.spam)
 
     let num = args[1]
@@ -549,17 +864,16 @@ break;
 
 case 'spamcheck':
 case 'cekspam': {
-  if (isBan) return m.reply('> _ⓘ Maaf kamu sudah terbanned permanen di bot inii_')
-    if (!isBanspam) return m.reply(`> _ⓘ Fitur Khusus bagi pengguna yang telah melakukan spam dan mendapatkan penalti_`)
-      let cekspamm = ms(global.db.data.users[m.sender].banspam.expired - Date.now())
-    let sispamnya = `*「 SPAM EXPIRE 」*\n\n➸ *ID*: ${m.sender}\n➸ *Expired :* ${cekspamm.days} day(s) ${cekspamm.hours} hour(s) ${cekspamm.minutes} minute(s)`
-    m.reply(sispamnya)
-  }
-  break
+  if (!isBanspam) return m.reply(`> _ⓘ Fitur Khusus bagi pengguna yang telah melakukan spam dan mendapatkan penalti_`)
+    let cekspamm = ms(user.banspam.expired - Date.now())
+  let sispamnya = `*「 SPAM EXPIRE 」*\n\n➸ *ID*: ${m.sender}\n➸ *Expired :* ${cekspamm.days} day(s) ${cekspamm.hours} hour(s) ${cekspamm.minutes} minute(s)`
+  m.reply(sispamnya)
+}
+break
 
 case 'spamlist':
 case 'listspam': {
-  if (!isCreator) return m.reply(mess.owner);
+  if (!isModerator) return m.reply(mess.mod);
 
   let users = global.db.data.users;
   let spamUsers = Object.entries(users).filter(([jid, data]) => data.banspam && data.banspam.status);
@@ -586,7 +900,7 @@ case 'listspam': {
 break;
 
 case 'banspam': {
-  if (!isCreator) return m.reply("Hanya owner/creator yang dapat menggunakan perintah ini.");
+  if (!isModerator) return m.reply(mess.mod);
 
   let [action, expired, num] = text.split(" ");
   if (!action || (action !== 'add' && action !== 'del')) {
@@ -610,6 +924,188 @@ case 'banspam': {
   } else if (action === 'del') {
     global.db.data.users[target].banspam = { status: false, expired: 0 };
     m.reply(`Berhasil menghapus baspam dari ${target}`);
+  }
+}
+break;
+
+  case 'ping':
+case 'tes':
+case 'botstatus':
+case 'statusbot':
+case 'status': {
+  if (isBanspam) return m.reply(mess.spam);
+
+  try {
+    // Send loading message
+    const loadingMsg = await m.reply('📊 _Collecting system information..._');
+
+    // ===== 1. LATENCY & RESPONSE TIME =====
+    const startTime = Date.now();
+    const pingStart = performance.now();
+
+    // Simulate actual ping
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const pingEnd = performance.now();
+    const responseTime = (pingEnd - pingStart).toFixed(2);
+
+    // ===== 2. BAILEYS & BOT VERSION =====
+    const packageJsonBailVersion = JSON.parse(await fs.readFileSync('./node_modules/@whiskeysocket/baileys/package.json', 'utf8'));
+    const BotVersion = JSON.parse(await fs.readFileSync('./package.json', 'utf8'));
+
+    // ===== 3. RUNTIME =====
+    const uptime = process.uptime();
+    const runtimeStr = runtime(uptime);
+
+    // ===== 4. MEMORY USAGE =====
+    const memUsage = process.memoryUsage();
+    const formatMemory = (bytes) => {
+      const mb = bytes / 1024 / 1024;
+      return mb.toFixed(2) + ' MB';
+    };
+
+    // ===== 5. CPU USAGE (2 SAMPLES) =====
+    const cpus = os.cpus();
+    const cpuModel = cpus[0].model.trim();
+    const cpuSpeed = cpus[0].speed;
+    const cpuCores = cpus.length;
+
+    // Get CPU usage (sample 1)
+    const getCPUInfo = () => {
+      const cpus = os.cpus();
+      let totalIdle = 0, totalTick = 0;
+
+      cpus.forEach(cpu => {
+        for (let type in cpu.times) {
+          totalTick += cpu.times[type];
+        }
+        totalIdle += cpu.times.idle;
+      });
+
+      return { idle: totalIdle / cpus.length, total: totalTick / cpus.length };
+    };
+
+    const startCPU = getCPUInfo();
+
+    // Wait 100ms for second sample
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const endCPU = getCPUInfo();
+
+    // Calculate CPU usage percentage
+    const idleDiff = endCPU.idle - startCPU.idle;
+    const totalDiff = endCPU.total - startCPU.total;
+    const cpuUsage = (100 - ~~(100 * idleDiff / totalDiff));
+
+    // ===== 6. OS INFORMATION =====
+    const platform = os.platform();
+    const osType = os.type();
+    const osRelease = os.release();
+    const osArch = os.arch();
+    const hostname = os.hostname();
+
+    // Format platform name
+    const platformNames = {
+      'linux': '🐧 Linux',
+      'darwin': '🍎 macOS',
+      'win32': '🪟 Windows',
+      'android': '🤖 Android'
+    };
+    const platformName = platformNames[platform] || platform;
+
+    // ===== 7. SYSTEM MEMORY =====
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    const memPercentage = ((usedMem / totalMem) * 100).toFixed(2);
+
+    // ===== 8. LOAD AVERAGE (Linux/macOS only) =====
+    let loadAvg = '';
+    try {
+      const loads = os.loadavg();
+      loadAvg = `${loads[0].toFixed(2)}, ${loads[1].toFixed(2)}, ${loads[2].toFixed(2)}`;
+    } catch (e) {
+      loadAvg = 'N/A';
+    }
+
+    // ===== 9. BOT INFORMATION =====
+    const nodeVersion = process.version;
+    const botPID = process.pid;
+
+    // ===== 10. DATABASE INFO =====
+    const totalUsers = Object.keys(global.db?.data?.users || {}).length;
+    const totalGroups = Object.keys(global.db?.data?.chats || {}).length;
+
+    // ===== BUILD RESPONSE =====
+    let statusText = `╭─❑ 「 *BOT STATUS* 」 ❑─\n`;
+    statusText += `│\n`;
+
+    // Response Time
+    statusText += `│ ⚡ *Response Time*\n`;
+    statusText += `│ ├ Latency: ${responseTime} ms\n`;
+    statusText += `│ └ Speed: ${(1000 / parseFloat(responseTime)).toFixed(2)} msg/s\n`;
+    statusText += `│\n`;
+
+    // Runtime
+    statusText += `│ ⏰ *Runtime*\n`;
+    statusText += `│ └ ${runtimeStr}\n`;
+    statusText += `│\n`;
+
+    // Bot Info
+    statusText += `│ 🤖 *Bot Information*\n`;
+    statusText += `│ ├ Bot Name: v${global.botName}\n`;
+    statusText += `│ ├ Bot Version: v${BotVersion.version}\n`;
+    statusText += `│ ├ Mode : ${rebot.public ? 'Public' : 'Self'}\n`;
+    statusText += `│ ├ Baileys: v${packageJsonBailVersion.version}\n`;
+    statusText += `│ ├ Node.js: ${nodeVersion}\n`;
+    statusText += `│ ├ PID: ${botPID}\n`;
+    statusText += `│ ├ Users: ${totalUsers}\n`;
+    statusText += `│ └ Groups: ${totalGroups}\n`;
+    statusText += `│\n`;
+
+    // Server Info
+    statusText += `│ 💻 *Server Information*\n`;
+    statusText += `│ ├ OS: ${platformName}\n`;
+    statusText += `│ ├ Type: ${osType}\n`;
+    statusText += `│ ├ Release: ${osRelease}\n`;
+    statusText += `│ ├ Arch: ${osArch}\n`;
+    statusText += `│ └ Hostname: ${hostname}\n`;
+    statusText += `│\n`;
+
+    // CPU Info
+    statusText += `│ 🔥 *CPU Information*\n`;
+    statusText += `│ ├ Model: ${cpuModel}\n`;
+    statusText += `│ ├ Cores: ${cpuCores}\n`;
+    statusText += `│ ├ Speed: ${cpuSpeed} MHz\n`;
+    statusText += `│ ├ Usage: ${cpuUsage}%\n`;
+    statusText += `│ └ Load Avg: ${loadAvg}\n`;
+    statusText += `│\n`;
+
+    // Memory Info
+    statusText += `│ 💾 *Memory Information*\n`;
+    statusText += `│\n`;
+    statusText += `│ *System Memory*\n`;
+    statusText += `│ ├ Total: ${formatp(totalMem)}\n`;
+    statusText += `│ ├ Used: ${formatp(usedMem)} (${memPercentage}%)\n`;
+    statusText += `│ └ Free: ${formatp(freeMem)}\n`;
+    statusText += `│\n`;
+    statusText += `│ *Process Memory*\n`;
+    statusText += `│ ├ RSS: ${formatMemory(memUsage.rss)}\n`;
+    statusText += `│ ├ Heap Used: ${formatMemory(memUsage.heapUsed)}\n`;
+    statusText += `│ ├ Heap Total: ${formatMemory(memUsage.heapTotal)}\n`;
+    statusText += `│ └ External: ${formatMemory(memUsage.external)}\n`;
+    statusText += `│\n`;
+
+    statusText += `╰──────❑\n\n`;
+    statusText += `_Updated: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}_`;
+
+    // Send status
+    await rebot.sendMessage(m.chat, { 
+      text: statusText 
+    }, { quoted: m });
+
+  } catch (err) {
+    throw err
   }
 }
 break;
