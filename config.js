@@ -5,12 +5,12 @@
 */
 
 
-  global.owner = ["105974090227874","221036851261537","6289692509996","6281234567"] // nomor owner (bisa pake lid or number) recomended number
-  global.ownerJid = '6289692509996'
-  global.prefix = "." // prefix command
+  global.owner = ["105974090227874","221036851261537","6285692949920","6281234567"] // nomor owner (bisa pake lid or number) recomended number
+  global.ownerJid = '6285692949920'
+  global.prefix = "." // prefi6285692949920x command
   global.botName = "Rebot"
   global.footer = "*Rebot™© | 2019-2025*"
-  global.pairingNumber = "6281234567" // WAJIB ISI NO BOT KALIAN UNTUK PAIRING!!
+  global.pairingNumber = "6281237947333" // WAJIB ISI NO BOT KALIAN UNTUK PAIRING!!
   global.packname = "(6281234567)";
   global.author = "Sticker.by Rebot";
 
